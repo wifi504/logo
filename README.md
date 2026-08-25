@@ -15,7 +15,7 @@
 - 固定行格式；级别以大写输出（`DEBUG` / `INFO` / `WARN` / `ERROR`）
 - 当前文件 `latest.log`；归档名为 `log-yyyy-MM-dd-NNN`（可选 gzip）
 - 按 `max_size_mb` 与本地零点触发滚动
-- 可选接管 `os.Stdout` / `os.Stderr`
+- 默认接管 `os.Stdout` / `os.Stderr`（包加载时尽量提前；并重绑标准库 `log`）
 - 启动时输出 ASCII banner，并写入日志文件（`stdout` 开启时同步到控制台）
 
 ## 安装
@@ -103,7 +103,6 @@ logs:
   max_backups: 30
   max_age_days: 30
   stdout: true
-  capture_std: true
   scopes:
     app:
       level: debug
@@ -121,7 +120,6 @@ logs:
 | `max_backups` | 归档文件保留个数上限 |
 | `max_age_days` | 按天龄删除归档；`0` 表示不启用 |
 | `stdout` | 是否同时写入真实控制台 |
-| `capture_std` | 是否接管 `os.Stdout` / `os.Stderr`；省略时默认为 `true` |
 | `scopes` | 按 scope / module 覆盖级别 |
 
 **级别优先级（由高到低）：**  
@@ -129,21 +127,21 @@ logs:
 
 ## 标准输出接管
 
-当 `capture_std` 为开启（默认）时，`Init` 会替换 `os.Stdout` 与 `os.Stderr`。未经过 `Logger` 方法的写入将被改写为：
+劫持为框架默认行为，不可关闭。包 `init` 阶段会尽可能早地替换 `os.Stdout` / `os.Stderr`（`go test` 下会跳过以避免干扰测试框架）；`Init` 时再次确保劫持，并调用 `log.SetOutput(os.Stderr)`，使已缓存默认 logger 的库（如 GORM 默认日志）一并进入管道。
+
+未经过 `Logger` 方法的写入将被改写为：
 
 ```text
 […][未配置Logo域和模块][WARN][unknown] stdout : …
 […][未配置Logo域和模块][ERROR][unknown] stderr : …
 ```
 
-出处字段固定为 `stdout` 或 `stderr`（该路径无法提供可靠的调用点行号）。框架内部输出使用已保存的控制台句柄，以避免递归捕获。
+出处字段固定为 `stdout` 或 `stderr`。框架内部输出使用已保存的控制台句柄，以避免递归捕获。`Init` 之前的捕获行会先打到真实控制台，并在 `Init` 后写入日志文件。
 
 | 范围 | 说明 |
 |------|------|
-| 可捕获 | `fmt.Print*`、`println`，以及在 `Init` 之后写入 `os.Stdout` / `os.Stderr` 的多数代码；标准库 `log`（默认 stderr） |
-| 不可捕获 | 在 `Init` 之前已缓存 `*os.File` 的依赖；直接写入文件描述符 1/2 的本地代码 |
-
-测试中可设置 `CaptureStd: logo.Bool(false)` 关闭接管。
+| 可捕获 | `fmt.Print*`、`println`、标准库 `log`（经 `SetOutput` 重绑）、多数写入当前 `os.Stdout` / `os.Stderr` 的代码 |
+| 不可捕获 | 自行长期持有旧 `*os.File` 且不走 `log.SetOutput` 的依赖；直接写入 fd 1/2 的本地代码 |
 
 ## 归档
 
@@ -163,7 +161,7 @@ logs:
 | `Init` / `Close` | 生命周期 |
 | `(*Logger).Debug` / `Info` / `Warn` / `Error` | 日志输出 |
 | `(*Logger).Writer` | 供第三方库使用的 `io.Writer` |
-| `Config` / `Bool` | 配置相关 |
+| `Config` | 配置结构 |
 | `Version` | 版本号常量 |
 
 ## 参与贡献

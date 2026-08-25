@@ -17,7 +17,7 @@ var (
 	closeOnce sync.Once
 )
 
-// Init applies configuration, opens latest.log, optionally captures stdio, and prints the banner.
+// Init applies configuration, opens latest.log, ensures stdio capture, and prints the banner.
 func Init(cfg Config) error {
 	cfg = cfg.withDefaults()
 	if _, err := parseLevel(cfg.Level); err != nil {
@@ -55,12 +55,12 @@ func Init(cfg Config) error {
 	stopCh = make(chan struct{})
 	writeMu.Unlock()
 
-	if cfg.shouldCaptureStd() {
-		if err := startCapture(); err != nil {
-			Close()
-			return err
-		}
+	// 劫持为默认行为：包 init 已尽量提前；此处确保开启并重绑 log.Default
+	if err := ensureCapture(); err != nil {
+		Close()
+		return err
 	}
+	flushEarlyBuffer()
 
 	go midnightLoop(stopCh)
 

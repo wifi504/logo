@@ -2,6 +2,7 @@ package logo
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,11 +16,10 @@ func TestLevelFiltering(t *testing.T) {
 	mod := app.RegisterModule("svc")
 
 	if err := Init(Config{
-		Level:      "warn",
-		Dir:        dir,
-		MaxSizeMB:  10,
-		Stdout:     false,
-		CaptureStd: Bool(false),
+		Level:     "warn",
+		Dir:       dir,
+		MaxSizeMB: 10,
+		Stdout:    false,
 		Scopes: map[string]ScopeConfig{
 			"testapp": {
 				Modules: map[string]ModuleConfig{
@@ -80,7 +80,6 @@ func TestRotateCreatesArchive(t *testing.T) {
 		Compress:   false,
 		MaxBackups: 10,
 		Stdout:     false,
-		CaptureStd: Bool(false),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -110,23 +109,23 @@ func TestRotateCreatesArchive(t *testing.T) {
 	}
 }
 
-func TestCaptureStdout(t *testing.T) {
+func TestCaptureStdoutAndStdLog(t *testing.T) {
 	dir := t.TempDir()
 	_ = RegisterScope("capapp").RegisterModule("capmod")
 
 	if err := Init(Config{
-		Level:      "debug",
-		Dir:        dir,
-		MaxSizeMB:  10,
-		Stdout:     false,
-		CaptureStd: Bool(true),
+		Level:     "debug",
+		Dir:       dir,
+		MaxSizeMB: 10,
+		Stdout:    false,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	defer Close()
 
 	fmt.Println("bare-stdout-line")
-	time.Sleep(50 * time.Millisecond)
+	log.Println("bare-stdlog-line")
+	time.Sleep(80 * time.Millisecond)
 
 	data, err := os.ReadFile(filepath.Join(dir, "latest.log"))
 	if err != nil {
@@ -135,5 +134,8 @@ func TestCaptureStdout(t *testing.T) {
 	s := string(data)
 	if !strings.Contains(s, "[未配置Logo域和模块][WARN][unknown] stdout : bare-stdout-line") {
 		t.Fatalf("captured stdout missing: %s", s)
+	}
+	if !strings.Contains(s, "[未配置Logo域和模块][ERROR][unknown] stderr :") || !strings.Contains(s, "bare-stdlog-line") {
+		t.Fatalf("captured std log missing: %s", s)
 	}
 }

@@ -17,8 +17,6 @@ type Config struct {
 	MaxAgeDays int `yaml:"max_age_days"`
 	// Stdout also writes log lines to the real console.
 	Stdout bool `yaml:"stdout"`
-	// CaptureStd hijacks os.Stdout/os.Stderr. nil means true (default on).
-	CaptureStd *bool `yaml:"capture_std"`
 	// Scopes holds per-scope level overrides.
 	Scopes map[string]ScopeConfig `yaml:"scopes"`
 }
@@ -52,13 +50,3 @@ func (c Config) withDefaults() Config {
 	}
 	return c
 }
-
-func (c Config) shouldCaptureStd() bool {
-	if c.CaptureStd == nil {
-		return true
-	}
-	return *c.CaptureStd
-}
-
-// Bool returns a *bool for CaptureStd and similar fields.
-func Bool(v bool) *bool { return &v }

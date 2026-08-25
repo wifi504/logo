@@ -11,12 +11,11 @@ func main() {
 	serverLog := app.RegisterModule("server")
 
 	if err := logo.Init(logo.Config{
-		Level:      "debug",
-		Dir:        "logs",
-		MaxSizeMB:  10,
-		Compress:   true,
-		Stdout:     true,
-		CaptureStd: logo.Bool(true),
+		Level:     "debug",
+		Dir:       "logs",
+		MaxSizeMB: 10,
+		Compress:  true,
+		Stdout:    true,
 		Scopes: map[string]logo.ScopeConfig{
 			"app": {
 				Level: "debug",
