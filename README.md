@@ -21,10 +21,10 @@
 ## 安装
 
 ```bash
-go get github.com/wifi504/logo@v1.0.0
+go get github.com/wifi504/logo@latest
 ```
 
-请使用与 `go.mod` 兼容的 Go 工具链。
+需要锁定某一发布版时，将 `@latest` 换成对应 Git tag（例如 `@v1.0.1`）。当前版本以仓库 tag 与 [`logo.Version`](version.go) 为准。
 
 ## 日志格式
 
