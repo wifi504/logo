@@ -1,10 +1,12 @@
 package logo
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLevelFiltering(t *testing.T) {
@@ -13,10 +15,11 @@ func TestLevelFiltering(t *testing.T) {
 	mod := app.RegisterModule("svc")
 
 	if err := Init(Config{
-		Level:     "warn",
-		Dir:       dir,
-		MaxSizeMB: 10,
-		Stdout:    false,
+		Level:      "warn",
+		Dir:        dir,
+		MaxSizeMB:  10,
+		Stdout:     false,
+		CaptureStd: Bool(false),
 		Scopes: map[string]ScopeConfig{
 			"testapp": {
 				Modules: map[string]ModuleConfig{
@@ -44,8 +47,11 @@ func TestLevelFiltering(t *testing.T) {
 	if !strings.Contains(s, "visible-info") || !strings.Contains(s, "visible-warn") {
 		t.Fatalf("expected info/warn lines: %s", s)
 	}
-	if !strings.Contains(s, "[testapp] [info] [svc]") {
+	if !strings.Contains(s, "[testapp][INFO][svc]") {
 		t.Fatalf("bad format: %s", s)
+	}
+	if !strings.Contains(s, "Logo Framework "+Version) {
+		t.Fatalf("banner missing version: %s", s)
 	}
 }
 
@@ -70,10 +76,11 @@ func TestRotateCreatesArchive(t *testing.T) {
 	if err := Init(Config{
 		Level:      "debug",
 		Dir:        dir,
-		MaxSizeMB:  1, // still large; force manual rotate
+		MaxSizeMB:  1,
 		Compress:   false,
 		MaxBackups: 10,
 		Stdout:     false,
+		CaptureStd: Bool(false),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -100,5 +107,33 @@ func TestRotateCreatesArchive(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "latest.log")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCaptureStdout(t *testing.T) {
+	dir := t.TempDir()
+	_ = RegisterScope("capapp").RegisterModule("capmod")
+
+	if err := Init(Config{
+		Level:      "debug",
+		Dir:        dir,
+		MaxSizeMB:  10,
+		Stdout:     false,
+		CaptureStd: Bool(true),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer Close()
+
+	fmt.Println("bare-stdout-line")
+	time.Sleep(50 * time.Millisecond)
+
+	data, err := os.ReadFile(filepath.Join(dir, "latest.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, "[未配置Logo域和模块][WARN][unknown] stdout : bare-stdout-line") {
+		t.Fatalf("captured stdout missing: %s", s)
 	}
 }

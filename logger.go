@@ -3,7 +3,6 @@ package logo
 import (
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -13,14 +12,12 @@ import (
 
 var (
 	writeMu   sync.Mutex
-	outWriter io.Writer = os.Stderr
 	rotator   *fileRotator
 	stopCh    chan struct{}
 	closeOnce sync.Once
 )
 
-// Init applies configuration, opens latest.log, and starts midnight rotation.
-// Scopes/modules should already be registered. Safe to call once; subsequent calls Close then re-init.
+// Init applies configuration, opens latest.log, optionally captures stdio, and prints the banner.
 func Init(cfg Config) error {
 	cfg = cfg.withDefaults()
 	if _, err := parseLevel(cfg.Level); err != nil {
@@ -50,11 +47,6 @@ func Init(cfg Config) error {
 
 	writeMu.Lock()
 	rotator = r
-	if cfg.Stdout {
-		outWriter = io.MultiWriter(r, os.Stdout)
-	} else {
-		outWriter = r
-	}
 	cfgMu.Lock()
 	runtimeCfg = cfg
 	rebuildLevelCache()
@@ -63,7 +55,20 @@ func Init(cfg Config) error {
 	stopCh = make(chan struct{})
 	writeMu.Unlock()
 
+	if cfg.shouldCaptureStd() {
+		if err := startCapture(); err != nil {
+			Close()
+			return err
+		}
+	}
+
 	go midnightLoop(stopCh)
+
+	banner := renderBanner()
+	if !strings.HasSuffix(banner, "\n") {
+		banner += "\n"
+	}
+	emitRaw(banner)
 
 	warnUnknownConfigKeys(cfg)
 	return nil
@@ -74,20 +79,22 @@ func warnUnknownConfigKeys(cfg Config) {
 	defer regMu.RUnlock()
 	for sn, sc := range cfg.Scopes {
 		if _, ok := scopes[sn]; !ok {
-			fmt.Fprintf(os.Stderr, "logo: config has unregistered scope %q (ignored for logging, levels unused)\n", sn)
+			fmt.Fprintf(realStderr, "logo: config has unregistered scope %q (ignored for logging, levels unused)\n", sn)
 			continue
 		}
 		for mn := range sc.Modules {
 			if _, ok := modules[moduleKey(sn, mn)]; !ok {
-				fmt.Fprintf(os.Stderr, "logo: config has unregistered module %s/%s\n", sn, mn)
+				fmt.Fprintf(realStderr, "logo: config has unregistered module %s/%s\n", sn, mn)
 			}
 		}
 	}
 }
 
-// Close stops the midnight rotator and closes the log file.
+// Close stops capture, midnight rotation, and closes the log file.
 func Close() {
 	closeOnce.Do(func() {
+		stopCapture()
+
 		writeMu.Lock()
 		ch := stopCh
 		stopCh = nil
@@ -95,13 +102,15 @@ func Close() {
 		if ch != nil {
 			close(ch)
 		}
+
 		writeMu.Lock()
 		if rotator != nil {
 			_ = rotator.Close()
 			rotator = nil
 		}
-		outWriter = os.Stderr
+		cfgMu.Lock()
 		inited = false
+		cfgMu.Unlock()
 		writeMu.Unlock()
 	})
 	closeOnce = sync.Once{}
@@ -126,12 +135,47 @@ func midnightLoop(stop <-chan struct{}) {
 	}
 }
 
+func formatTimestamp(t time.Time) string {
+	return fmt.Sprintf("%s %03d", t.Format("2006-01-02 15:04:05"), t.Nanosecond()/1e6)
+}
+
+func formatLogLine(scope, level, module, where, msg string) string {
+	return fmt.Sprintf("[%s][%s][%s][%s] %s : %s\n",
+		formatTimestamp(time.Now()),
+		scope,
+		level,
+		module,
+		where,
+		msg,
+	)
+}
+
+// emitRaw writes bytes to the log file and optionally the real console (never the hijacked os.Stdout).
+func emitRaw(s string) {
+	b := []byte(s)
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	cfgMu.RLock()
+	toStdout := inited && runtimeCfg.Stdout
+	cfgMu.RUnlock()
+	if rotator != nil {
+		if _, err := rotator.WriteCheckRotate(b); err != nil {
+			fmt.Fprintf(realStderr, "logo: write: %v\n", err)
+		}
+	}
+	if toStdout {
+		_, _ = realStdout.Write(b)
+	} else if rotator == nil {
+		_, _ = realStderr.Write(b)
+	}
+}
+
 func (l *Logger) logf(level Level, format string, args ...any) {
 	if l == nil {
 		return
 	}
 	if !isRegistered(l.scope, l.module) {
-		fmt.Fprintf(os.Stderr, "logo: logger %s/%s is not registered\n", l.scope, l.module)
+		fmt.Fprintf(realStderr, "logo: logger %s/%s is not registered\n", l.scope, l.module)
 		return
 	}
 	if level < effectiveLevel(l.scope, l.module) {
@@ -151,35 +195,8 @@ func (l *Logger) logf(level Level, format string, args ...any) {
 		msg = fmt.Sprintf(format, args...)
 	}
 	msg = strings.TrimRight(msg, "\r\n")
-
-	now := time.Now()
-	lineOut := fmt.Sprintf("[%s %03d] [%s] [%s] [%s] %s:%d : %s\n",
-		now.Format("2006-01-02 15:04:05"),
-		now.Nanosecond()/1e6,
-		l.scope,
-		level.String(),
-		l.module,
-		file,
-		line,
-		msg,
-	)
-
-	writeMu.Lock()
-	defer writeMu.Unlock()
-	cfgMu.RLock()
-	toStdout := inited && runtimeCfg.Stdout
-	cfgMu.RUnlock()
-
-	if rotator != nil {
-		if _, err := rotator.WriteCheckRotate([]byte(lineOut)); err != nil {
-			fmt.Fprintf(os.Stderr, "logo: write: %v\n", err)
-		}
-		if toStdout {
-			_, _ = os.Stdout.Write([]byte(lineOut))
-		}
-		return
-	}
-	_, _ = io.WriteString(outWriter, lineOut)
+	where := fmt.Sprintf("%s:%d", file, line)
+	emitRaw(formatLogLine(l.scope, level.String(), l.module, where, msg))
 }
 
 // Debug logs at debug level.
@@ -195,7 +212,6 @@ func (l *Logger) Warn(format string, args ...any) { l.logf(LevelWarn, format, ar
 func (l *Logger) Error(format string, args ...any) { l.logf(LevelError, format, args...) }
 
 // Writer returns an io.Writer that logs each complete line at the given level.
-// Useful for bridging third-party libraries (e.g. Gin DefaultWriter).
 func (l *Logger) Writer(level Level) io.Writer {
 	return &lineWriter{logger: l, level: level}
 }
@@ -226,7 +242,6 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 		w.buf = w.buf[i+1:]
 		line = strings.TrimRight(line, "\r")
 		if line != "" {
-			// depth: Writer -> logf needs Caller(2) from Debug/Info; use direct logf with adjust
 			w.logger.logfLine(w.level, line)
 		}
 	}
@@ -250,28 +265,6 @@ func (l *Logger) logfLine(level Level, msg string) {
 	} else {
 		file = filepath.Base(file)
 	}
-	now := time.Now()
-	lineOut := fmt.Sprintf("[%s %03d] [%s] [%s] [%s] %s:%d : %s\n",
-		now.Format("2006-01-02 15:04:05"),
-		now.Nanosecond()/1e6,
-		l.scope,
-		level.String(),
-		l.module,
-		file,
-		line,
-		msg,
-	)
-	writeMu.Lock()
-	defer writeMu.Unlock()
-	cfgMu.RLock()
-	toStdout := inited && runtimeCfg.Stdout
-	cfgMu.RUnlock()
-	if rotator != nil {
-		_, _ = rotator.WriteCheckRotate([]byte(lineOut))
-		if toStdout {
-			_, _ = os.Stdout.Write([]byte(lineOut))
-		}
-		return
-	}
-	_, _ = io.WriteString(outWriter, lineOut)
+	where := fmt.Sprintf("%s:%d", file, line)
+	emitRaw(formatLogLine(l.scope, level.String(), l.module, where, msg))
 }

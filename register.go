@@ -34,15 +34,15 @@ func parseLevel(s string) (Level, error) {
 func (l Level) String() string {
 	switch l {
 	case LevelDebug:
-		return "debug"
+		return "DEBUG"
 	case LevelInfo:
-		return "info"
+		return "INFO"
 	case LevelWarn:
-		return "warn"
+		return "WARN"
 	case LevelError:
-		return "error"
+		return "ERROR"
 	default:
-		return "info"
+		return "INFO"
 	}
 }
 
