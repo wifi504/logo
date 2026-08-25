@@ -68,6 +68,8 @@ func Init(cfg Config) error {
 	if !strings.HasSuffix(banner, "\n") {
 		banner += "\n"
 	}
+	// 版本行后再空一行，与后续日志隔开
+	banner += "\n"
 	emitRaw(banner)
 
 	warnUnknownConfigKeys(cfg)
