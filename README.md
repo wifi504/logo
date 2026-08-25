@@ -1,9 +1,22 @@
 # logo
 
-**logo**（**log** + g**o**）是一个可复用的 Go 日志框架：强制注册 scope/module、分级日志级别，并支持按天 / 按大小归档；可接管 `os.Stdout` / `os.Stderr`。
+面向 Go 的轻量日志框架：显式注册 scope / module、分级日志级别，以及按体积或按日滚动归档。
 
-模块路径：`github.com/wifi504/logo`  
-当前版本：见 `logo.Version`（与 Git tag 一致，如 `v1.0.0`）
+| 项目 | 说明 |
+|------|------|
+| Module | [`github.com/wifi504/logo`](https://github.com/wifi504/logo) |
+| License | [MIT](LICENSE) |
+| Version | [`logo.Version`](version.go)（与 Git tag 对齐，例如 `v1.0.0`） |
+
+## 特性
+
+- 通过 `RegisterScope` / `RegisterModule` 注册后，使用 `*Logger` 的 `Debug` / `Info` / `Warn` / `Error` 输出
+- 级别继承：module 覆盖 scope，scope 覆盖全局
+- 固定行格式；级别以大写输出（`DEBUG` / `INFO` / `WARN` / `ERROR`）
+- 当前文件 `latest.log`；归档名为 `log-yyyy-MM-dd-NNN`（可选 gzip）
+- 按 `max_size_mb` 与本地零点触发滚动
+- 可选接管 `os.Stdout` / `os.Stderr`
+- 启动时输出 ASCII banner，并写入日志文件（`stdout` 开启时同步到控制台）
 
 ## 安装
 
@@ -11,14 +24,13 @@
 go get github.com/wifi504/logo@v1.0.0
 ```
 
-## 日志行格式
+请使用与 `go.mod` 兼容的 Go 工具链。
+
+## 日志格式
 
 ```text
-[yyyy-MM-dd hh:mm:ss SSS][scope][LEVEL][module] 文件名:行号 : 日志内容
+[yyyy-MM-dd hh:mm:ss SSS][scope][LEVEL][module] file:line : message
 ```
-
-- 中括号之间无空格
-- 级别全大写：`DEBUG` / `INFO` / `WARN` / `ERROR`
 
 示例：
 
@@ -26,7 +38,11 @@ go get github.com/wifi504/logo@v1.0.0
 [2026-08-25 16:24:01 123][app][INFO][server] main.go:42 : HTTP server listening on :8080
 ```
 
+字段方括号之间无空格。输出中的级别恒为大写；配置文件中的取值仍为小写（`debug`、`info` 等）。
+
 ## 快速开始
+
+scope 与 module 须在代码中先行注册。配置仅对已注册名称提供级别覆盖。
 
 ```go
 package main
@@ -34,40 +50,49 @@ package main
 import "github.com/wifi504/logo"
 
 func main() {
-    app := logo.RegisterScope("app")
-    serverLog := app.RegisterModule("server")
+	app := logo.RegisterScope("app")
+	serverLog := app.RegisterModule("server")
 
-    if err := logo.Init(logo.Config{
-        Level:     "debug",
-        Dir:       "logs",
-        MaxSizeMB: 10,
-        Compress:  true,
-        Stdout:    true,
-        // CaptureStd 默认 true；测试可 logo.Bool(false)
-        Scopes: map[string]logo.ScopeConfig{
-            "app": {
-                Level: "debug",
-                Modules: map[string]logo.ModuleConfig{
-                    "server": {Level: "info"},
-                },
-            },
-        },
-    }); err != nil {
-        panic(err)
-    }
-    defer logo.Close()
+	if err := logo.Init(logo.Config{
+		Level:     "debug",
+		Dir:       "logs",
+		MaxSizeMB: 10,
+		Compress:  true,
+		Stdout:    true,
+		Scopes: map[string]logo.ScopeConfig{
+			"app": {
+				Level: "debug",
+				Modules: map[string]logo.ModuleConfig{
+					"server": {Level: "info"},
+				},
+			},
+		},
+	}); err != nil {
+		panic(err)
+	}
+	defer logo.Close()
 
-    serverLog.Info("listening on %s", ":8080")
+	serverLog.Info("listening on %s", ":8080")
 }
 ```
 
-scope / module **必须在代码里先注册**。YAML 只为已注册名称提供级别覆盖。
+`Init` 会输出包含 `logo.Version` 的 banner，并写入 `latest.log`；在 `stdout: true` 时同时写入真实控制台。
 
-`Init` 会打印 ASCII banner（含 `Version`），并**同时写入** `latest.log` 与控制台（当 `stdout: true`）。
+完整示例见 [`examples/basic`](examples/basic)。
 
-## 配置段
+## 配置
 
-本库**不负责**读取配置文件。请提供可反序列化为 `logo.Config` 的 `logs` 段：
+本库不解析业务侧的配置文件路径。将 `logs` 段（或等价结构）反序列化为 `logo.Config` 后传入 `Init`：
+
+```go
+var root struct {
+	Logs logo.Config `yaml:"logs"`
+}
+// yaml.Unmarshal(data, &root)
+logo.Init(root.Logs)
+```
+
+YAML 示例：
 
 ```yaml
 logs:
@@ -78,7 +103,7 @@ logs:
   max_backups: 30
   max_age_days: 30
   stdout: true
-  capture_std: true   # 接管 os.Stdout / os.Stderr；省略时默认为 true
+  capture_std: true
   scopes:
     app:
       level: debug
@@ -87,31 +112,64 @@ logs:
           level: debug
 ```
 
-级别优先级：`module` > `scope` > `logs.level`。
+| 字段 | 说明 |
+|------|------|
+| `level` | 全局默认级别：`debug` \| `info` \| `warn` \| `error` |
+| `dir` | `latest.log` 与归档目录 |
+| `max_size_mb` | `latest.log` 达到该大小时滚动 |
+| `compress` | 归档是否 gzip |
+| `max_backups` | 归档文件保留个数上限 |
+| `max_age_days` | 按天龄删除归档；`0` 表示不启用 |
+| `stdout` | 是否同时写入真实控制台 |
+| `capture_std` | 是否接管 `os.Stdout` / `os.Stderr`；省略时默认为 `true` |
+| `scopes` | 按 scope / module 覆盖级别 |
 
-## 接管标准输出
+**级别优先级（由高到低）：**  
+`scopes.<scope>.modules.<module>.level` → `scopes.<scope>.level` → `logs.level`。
 
-类似 Java 的 `System.setOut`：`Init` 后替换 `os.Stdout` / `os.Stderr`。未走 `Logger.*` 的输出会被封装为：
+## 标准输出接管
+
+当 `capture_std` 为开启（默认）时，`Init` 会替换 `os.Stdout` 与 `os.Stderr`。未经过 `Logger` 方法的写入将被改写为：
 
 ```text
-[...][未配置Logo域和模块][WARN][unknown] stdout : ...
-[...][未配置Logo域和模块][ERROR][unknown] stderr : ...
+[…][未配置Logo域和模块][WARN][unknown] stdout : …
+[…][未配置Logo域和模块][ERROR][unknown] stderr : …
 ```
 
-出处固定为 `stdout` / `stderr`（不展示文件行号）。框架自身写日志使用原始控制台副本，避免递归。
+出处字段固定为 `stdout` 或 `stderr`（该路径无法提供可靠的调用点行号）。框架内部输出使用已保存的控制台句柄，以避免递归捕获。
 
-能兜住：`fmt.Print*`、`println`、多数写 `os.Stdout` 的代码、标准库 `log`（stderr）。  
-兜不住：Init 前已缓存旧 `*File` 的库、直接写 fd 的 CGO。
-
-## 归档规则
-
-| 项目 | 规则 |
+| 范围 | 说明 |
 |------|------|
-| 当前写入 | `{dir}/latest.log` |
-| 归档名 | `log-yyyy-MM-dd-001` 同日递增 |
-| 触发 | 满 `max_size_mb` 或本地每天 0 点 |
-| 压缩 | `compress: true` → `.gz` |
+| 可捕获 | `fmt.Print*`、`println`，以及在 `Init` 之后写入 `os.Stdout` / `os.Stderr` 的多数代码；标准库 `log`（默认 stderr） |
+| 不可捕获 | 在 `Init` 之前已缓存 `*os.File` 的依赖；直接写入文件描述符 1/2 的本地代码 |
+
+测试中可设置 `CaptureStd: logo.Bool(false)` 关闭接管。
+
+## 归档
+
+| 项目 | 行为 |
+|------|------|
+| 当前文件 | `{dir}/latest.log`（固定文件名） |
+| 归档命名 | `log-yyyy-MM-dd-001`，同日递增为 `002`、`003`… |
+| 体积触发 | `latest.log` ≥ `max_size_mb` |
+| 时间触发 | 本地时区每日 0 点（空文件跳过） |
+| 压缩 | `compress: true` 时生成 `log-yyyy-MM-dd-NNN.gz` |
+
+## API
+
+| 符号 | 作用 |
+|------|------|
+| `RegisterScope` / `(*Scope).RegisterModule` | 注册 |
+| `Init` / `Close` | 生命周期 |
+| `(*Logger).Debug` / `Info` / `Warn` / `Error` | 日志输出 |
+| `(*Logger).Writer` | 供第三方库使用的 `io.Writer` |
+| `Config` / `Bool` | 配置相关 |
+| `Version` | 版本号常量 |
+
+## 参与贡献
+
+欢迎在 [GitHub](https://github.com/wifi504/logo) 提交 Issue 与 Pull Request。提交前请运行 `go test ./...`。
 
 ## 许可证
 
-MIT © WIFI连接超时
+[MIT](LICENSE) © WIFI连接超时
