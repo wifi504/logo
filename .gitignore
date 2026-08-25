@@ -1,0 +1,13 @@
+# Binaries
+*.exe
+*.test
+*.out
+
+# Logs produced by tests / local runs
+logs/
+*.log
+*.gz
+
+# Editor
+.idea/
+.vscode/
