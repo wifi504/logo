@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // Level is a log severity.
@@ -15,6 +16,9 @@ const (
 	LevelWarn
 	LevelError
 )
+
+// MaxNameLen is the maximum rune length for scope and module names.
+const MaxNameLen = 15
 
 func parseLevel(s string) (Level, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
@@ -46,6 +50,12 @@ func (l Level) String() string {
 	}
 }
 
+func validateName(kind, name string) {
+	if n := utf8.RuneCountInString(name); n > MaxNameLen {
+		panic(fmt.Sprintf("logo: %s name %q has %d runes, max is %d", kind, name, n, MaxNameLen))
+	}
+}
+
 // Scope is a registered logging domain (e.g. "app", "gin").
 type Scope struct {
 	name string
@@ -72,11 +82,13 @@ func moduleKey(scope, module string) string {
 }
 
 // RegisterScope registers a scope. Must be called before Init (or at least before logging).
+// Name must be non-empty and at most MaxNameLen runes.
 func RegisterScope(name string) *Scope {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		panic("logo: scope name must not be empty")
 	}
+	validateName("scope", name)
 	regMu.Lock()
 	defer regMu.Unlock()
 	if s, ok := scopes[name]; ok {
@@ -88,6 +100,7 @@ func RegisterScope(name string) *Scope {
 }
 
 // RegisterModule registers a module under the scope and returns its Logger.
+// Name must be non-empty and at most MaxNameLen runes.
 func (s *Scope) RegisterModule(name string) *Logger {
 	if s == nil || s.name == "" {
 		panic("logo: nil scope")
@@ -96,6 +109,7 @@ func (s *Scope) RegisterModule(name string) *Logger {
 	if name == "" {
 		panic("logo: module name must not be empty")
 	}
+	validateName("module", name)
 	key := moduleKey(s.name, name)
 	regMu.Lock()
 	defer regMu.Unlock()

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 var (
@@ -141,13 +142,37 @@ func formatTimestamp(t time.Time) string {
 	return fmt.Sprintf("%s %03d", t.Format("2006-01-02 15:04:05"), t.Nanosecond()/1e6)
 }
 
+const (
+	scopeWidth  = 15
+	levelWidth  = 5
+	moduleWidth = 15
+	whereWidth  = 25
+)
+
+func padRight(s string, width int) string {
+	n := utf8.RuneCountInString(s)
+	if n >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-n)
+}
+
+// truncateFront keeps the last width runes (useful for long paths); pads to width if shorter.
+func truncateFront(s string, width int) string {
+	runes := []rune(s)
+	if len(runes) > width {
+		s = string(runes[len(runes)-width:])
+	}
+	return padRight(s, width)
+}
+
 func formatLogLine(scope, level, module, where, msg string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s] %s : %s\n",
 		formatTimestamp(time.Now()),
-		scope,
-		level,
-		module,
-		where,
+		padRight(scope, scopeWidth),
+		padRight(level, levelWidth),
+		padRight(module, moduleWidth),
+		truncateFront(where, whereWidth),
 		msg,
 	)
 }

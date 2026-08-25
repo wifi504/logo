@@ -29,16 +29,24 @@ go get github.com/wifi504/logo@latest
 ## 日志格式
 
 ```text
-[yyyy-MM-dd hh:mm:ss SSS][scope][LEVEL][module] file:line : message
+[yyyy-MM-dd hh:mm:ss SSS][scope           ][LEVEL][module         ] file:line…               : message
 ```
 
-示例：
+示例（列已对齐，便于扫读）：
 
 ```text
-[2026-08-25 16:24:01 123][app][INFO][server] main.go:42 : HTTP server listening on :8080
+[2026-08-25 16:24:01 123][app            ][INFO ][server         ] main.go:42               : listening on :8080
+[2026-08-25 16:24:01 200][gin            ][DEBUG][engine         ] logging.go:46            : GET /healthz
 ```
 
-字段方括号之间无空格。输出中的级别恒为大写；配置文件中的取值仍为小写（`debug`、`info` 等）。
+约定：
+
+| 字段 | 规则 |
+|------|------|
+| scope / module | 注册名 ≤ 15 个 rune；输出左对齐，不足补空格至 15 |
+| LEVEL | 大写；左对齐，不足补空格至 5（`DEBUG` / `INFO ` / `WARN ` / `ERROR`） |
+| 来源 | 左对齐宽 25；超过则**截断左侧**保留末尾；不足补空格 |
+| 冒号 | 以上列宽固定后，` : ` 前对齐 |
 
 ## 快速开始
 
@@ -132,8 +140,8 @@ logs:
 未经过 `Logger` 方法的写入将被改写为：
 
 ```text
-[…][未配置Logo域和模块][WARN][unknown] stdout : …
-[…][未配置Logo域和模块][ERROR][unknown] stderr : …
+[…][未配置Logo域和模块][WARN ][unknown        ] stdout                   : …
+[…][未配置Logo域和模块][ERROR][unknown        ] stderr                   : …
 ```
 
 出处字段固定为 `stdout` 或 `stderr`。框架内部输出使用已保存的控制台句柄，以避免递归捕获。`Init` 之前的捕获行会先打到真实控制台，并在 `Init` 后写入日志文件。
