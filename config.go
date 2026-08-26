@@ -3,7 +3,8 @@ package logo
 // Config is the logs configuration section expected by the framework.
 // Callers load YAML (or other sources) into this struct and pass it to Init.
 type Config struct {
-	// Level is the global default level: debug | info | warn | error.
+	// Level is the global default threshold: debug | info | warn | error | off.
+	// Meaning: emit Logger lines at this severity and above; off suppresses all.
 	Level string `yaml:"level"`
 	// Dir is the directory for latest.log and archives.
 	Dir string `yaml:"dir"`

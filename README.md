@@ -11,8 +11,8 @@
 ## 特性
 
 - 通过 `RegisterScope` / `RegisterModule` 注册后，使用 `*Logger` 的 `Debug` / `Info` / `Warn` / `Error` 输出
-- 级别继承：module 覆盖 scope，scope 覆盖全局
-- 固定行格式；级别以大写输出（`DEBUG` / `INFO` / `WARN` / `ERROR`）
+- 级别阈值过滤与继承：module 覆盖 scope，scope 覆盖全局；支持 `off` 关闭输出
+- 固定行格式；行内级别以大写输出（`DEBUG` / `INFO` / `WARN` / `ERROR`）
 - scope / module 列宽按已出现名称动态对齐（上限 15）；来源列固定 16
 - 当前文件 `latest.log`；归档名为 `log-yyyy-MM-dd-NNN`（可选 gzip）
 - 按 `max_size_mb` 与本地零点触发滚动
@@ -122,17 +122,43 @@ logs:
 
 | 字段 | 说明 |
 |------|------|
-| `level` | 全局默认级别：`debug` \| `info` \| `warn` \| `error` |
+| `level` | 全局默认**阈值**：`debug` \| `info` \| `warn` \| `error` \| `off` |
 | `dir` | `latest.log` 与归档目录 |
 | `max_size_mb` | `latest.log` 达到该大小时滚动 |
 | `compress` | 归档是否 gzip |
 | `max_backups` | 归档文件保留个数上限 |
 | `max_age_days` | 按天龄删除归档；`0` 表示不启用 |
 | `stdout` | 是否同时写入真实控制台 |
-| `scopes` | 按 scope / module 覆盖级别 |
+| `scopes` | 按 scope / module 覆盖级别阈值 |
 
-**级别优先级（由高到低）：**  
+### 级别如何使用
+
+严重程度从低到高（配置阈值与行内级别共用前四级）：
+
+```text
+DEBUG < INFO < WARN < ERROR < OFF
+```
+
+| 概念 | 说明 |
+|------|------|
+| 行内级别 | 仅 `DEBUG` / `INFO` / `WARN` / `ERROR` 会出现在日志行中 |
+| 配置阈值 | `level` 表示「输出**该级别及以上**」；低于阈值的 `Logger` 调用直接丢弃 |
+| `off` | 仅作阈值，**不会**作为行内级别打印；生效后该作用域下全部 `Debug`/`Info`/`Warn`/`Error`（及对应 `Writer`）均不输出 |
+
+示例：
+
+| 配置阈值 | 会输出 | 会丢弃 |
+|----------|--------|--------|
+| `debug` | DEBUG、INFO、WARN、ERROR | （无） |
+| `info` | INFO、WARN、ERROR | DEBUG |
+| `warn` | WARN、ERROR | DEBUG、INFO |
+| `error` | ERROR | DEBUG、INFO、WARN |
+| `off` | （无） | 全部 |
+
+**阈值优先级（由高到低，越具体越优先）：**  
 `scopes.<scope>.modules.<module>.level` → `scopes.<scope>.level` → `logs.level`。
+
+例如全局为 `info`，某 module 配 `off`，则仅关闭该 module；其它模块仍按继承结果过滤。
 
 ## 标准输出接管
 

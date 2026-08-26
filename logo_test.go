@@ -69,6 +69,45 @@ func TestLevelFiltering(t *testing.T) {
 	}
 }
 
+func TestLevelOff(t *testing.T) {
+	dir := t.TempDir()
+	app := RegisterScope("offapp")
+	mod := app.RegisterModule("offmod")
+
+	if err := Init(Config{
+		Level:     "debug",
+		Dir:       dir,
+		MaxSizeMB: 10,
+		Stdout:    false,
+		Scopes: map[string]ScopeConfig{
+			"offapp": {
+				Modules: map[string]ModuleConfig{
+					"offmod": {Level: "off"},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer Close()
+
+	mod.Debug("no-debug")
+	mod.Info("no-info")
+	mod.Warn("no-warn")
+	mod.Error("no-error")
+
+	data, err := os.ReadFile(filepath.Join(dir, "latest.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	for _, needle := range []string{"no-debug", "no-info", "no-warn", "no-error"} {
+		if strings.Contains(s, needle) {
+			t.Fatalf("off should filter %q: %s", needle, s)
+		}
+	}
+}
+
 func TestArchiveSeq(t *testing.T) {
 	dir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(dir, "log-2099-01-02-001"), []byte("a"), 0o644)

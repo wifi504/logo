@@ -7,7 +7,12 @@ import (
 	"unicode/utf8"
 )
 
-// Level is a log severity.
+// Level is a log severity or a filter threshold.
+//
+// Emit levels (appear in log lines): DEBUG < INFO < WARN < ERROR.
+// Config thresholds: the same four, plus OFF (higher than ERROR).
+// A configured threshold means “emit this severity and above”; OFF emits nothing
+// via Logger methods (it is never printed as a line level).
 type Level int
 
 const (
@@ -15,6 +20,7 @@ const (
 	LevelInfo
 	LevelWarn
 	LevelError
+	LevelOff // threshold only: suppress all Logger output
 )
 
 // MaxNameLen is the maximum rune length for scope and module names.
@@ -30,6 +36,8 @@ func parseLevel(s string) (Level, error) {
 		return LevelWarn, nil
 	case "error":
 		return LevelError, nil
+	case "off":
+		return LevelOff, nil
 	default:
 		return LevelInfo, fmt.Errorf("logo: unknown level %q", s)
 	}
@@ -45,6 +53,8 @@ func (l Level) String() string {
 		return "WARN"
 	case LevelError:
 		return "ERROR"
+	case LevelOff:
+		return "OFF"
 	default:
 		return "INFO"
 	}
