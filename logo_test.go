@@ -155,8 +155,18 @@ func TestCaptureStdoutAndStdLog(t *testing.T) {
 }
 
 func TestPadAndTruncate(t *testing.T) {
+	// 先注册以建立动态列宽
+	_ = RegisterScope("app")
+	_ = RegisterScope("gin").RegisterModule("engine")
+	_ = RegisterScope("app").RegisterModule("config")
+	_ = RegisterScope("app").RegisterModule("server")
+
+	sw, mw := scopePadWidth(), modulePadWidth()
+	wantScope := padRight("app", sw)
+	wantLevel := padRight("INFO", levelWidth)
+	wantMod := padRight("config", mw)
 	wantWhere := padRight("main.go:35", whereWidth)
-	want := fmt.Sprintf("[app            ][INFO ][config         ] %s : hello", wantWhere)
+	want := fmt.Sprintf("[%s][%s][%s] %s : hello", wantScope, wantLevel, wantMod, wantWhere)
 	got := formatLogLine("app", "INFO", "config", "main.go:35", "hello")
 	if !strings.Contains(got, want) {
 		t.Fatalf("align fail:\n got %q\nwant substring %q", got, want)

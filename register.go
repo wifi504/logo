@@ -75,10 +75,42 @@ var (
 	cfgMu      sync.RWMutex
 	runtimeCfg Config
 	levelCache sync.Map // key scope/module -> Level threshold
+
+	// maxScopeW / maxModuleW：已出现名称的最大 rune 宽度（≤ MaxNameLen），用于列对齐
+	maxScopeW  int
+	maxModuleW int
 )
 
 func moduleKey(scope, module string) string {
 	return scope + "/" + module
+}
+
+func bumpNameWidth(cur *int, name string) {
+	n := utf8.RuneCountInString(name)
+	if n > MaxNameLen {
+		n = MaxNameLen
+	}
+	if n > *cur {
+		*cur = n
+	}
+}
+
+func scopePadWidth() int {
+	regMu.RLock()
+	defer regMu.RUnlock()
+	if maxScopeW < 1 {
+		return 1
+	}
+	return maxScopeW
+}
+
+func modulePadWidth() int {
+	regMu.RLock()
+	defer regMu.RUnlock()
+	if maxModuleW < 1 {
+		return 1
+	}
+	return maxModuleW
 }
 
 // RegisterScope registers a scope. Must be called before Init (or at least before logging).
@@ -96,6 +128,7 @@ func RegisterScope(name string) *Scope {
 	}
 	s := &Scope{name: name}
 	scopes[name] = s
+	bumpNameWidth(&maxScopeW, name)
 	return s
 }
 
@@ -118,6 +151,7 @@ func (s *Scope) RegisterModule(name string) *Logger {
 	}
 	l := &Logger{scope: s.name, module: name}
 	modules[key] = l
+	bumpNameWidth(&maxModuleW, name)
 	return l
 }
 

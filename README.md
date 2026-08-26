@@ -13,6 +13,7 @@
 - 通过 `RegisterScope` / `RegisterModule` 注册后，使用 `*Logger` 的 `Debug` / `Info` / `Warn` / `Error` 输出
 - 级别继承：module 覆盖 scope，scope 覆盖全局
 - 固定行格式；级别以大写输出（`DEBUG` / `INFO` / `WARN` / `ERROR`）
+- scope / module 列宽按已出现名称动态对齐（上限 15）；来源列固定 16
 - 当前文件 `latest.log`；归档名为 `log-yyyy-MM-dd-NNN`（可选 gzip）
 - 按 `max_size_mb` 与本地零点触发滚动
 - 默认接管 `os.Stdout` / `os.Stderr`（包加载时尽量提前；并重绑标准库 `log`）
@@ -24,29 +25,29 @@
 go get github.com/wifi504/logo@latest
 ```
 
-需要锁定某一发布版时，将 `@latest` 换成对应 Git tag（例如 `@v1.0.1`）。当前版本以仓库 tag 与 [`logo.Version`](version.go) 为准。
+需要锁定某一发布版时，将 `@latest` 换成对应 Git tag（例如 `@v1.0.4`）。当前版本以仓库 tag 与 [`logo.Version`](version.go) 为准。
 
 ## 日志格式
 
 ```text
-[yyyy-MM-dd hh:mm:ss SSS][scope           ][LEVEL][module         ] file:line…               : message
+[yyyy-MM-dd hh:mm:ss SSS][scope][LEVEL][module] file:line…      : message
 ```
 
-示例（列已对齐，便于扫读）：
+示例（列按当前已出现名称的最大宽度对齐）：
 
 ```text
-[2026-08-25 16:24:01 123][app            ][INFO ][server         ] main.go:42               : listening on :8080
-[2026-08-25 16:24:01 200][gin            ][DEBUG][engine         ] logging.go:46            : GET /healthz
+[2026-08-25 16:24:01 123][app ][INFO ][server] main.go:42       : listening on :8080
+[2026-08-25 16:24:01 200][gin ][DEBUG][engine] logging.go:46    : GET /healthz
 ```
 
 约定：
 
 | 字段 | 规则 |
 |------|------|
-| scope / module | 注册名 ≤ 15 个 rune；输出左对齐，不足补空格至 15 |
-| LEVEL | 大写；左对齐，不足补空格至 5（`DEBUG` / `INFO ` / `WARN ` / `ERROR`） |
-| 来源 | 左对齐宽 25；超过则**截断左侧**保留末尾；不足补空格 |
-| 冒号 | 以上列宽固定后，` : ` 前对齐 |
+| scope / module | 注册名 ≤ 15 个 rune；列宽取**已出现名称的最大长度**（不超过 15），左对齐补空格 |
+| LEVEL | 大写；左对齐，固定宽 5 |
+| 来源 | 左对齐固定宽 **16**；超过则**截断左侧**保留末尾；不足补空格 |
+| 冒号 | 以上列对齐后，` : ` 前竖直对齐 |
 
 ## 快速开始
 
@@ -140,8 +141,8 @@ logs:
 未经过 `Logger` 方法的写入将被改写为：
 
 ```text
-[…][未配置Logo域和模块][WARN ][unknown        ] stdout                   : …
-[…][未配置Logo域和模块][ERROR][unknown        ] stderr                   : …
+[…][未配置Logo域和模块][WARN ][unknown] stdout           : …
+[…][未配置Logo域和模块][ERROR][unknown] stderr           : …
 ```
 
 出处字段固定为 `stdout` 或 `stderr`。框架内部输出使用已保存的控制台句柄，以避免递归捕获。`Init` 之前的捕获行会先打到真实控制台，并在 `Init` 后写入日志文件。

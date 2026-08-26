@@ -143,10 +143,8 @@ func formatTimestamp(t time.Time) string {
 }
 
 const (
-	scopeWidth  = 15
-	levelWidth  = 5
-	moduleWidth = 15
-	whereWidth  = 25
+	levelWidth = 5
+	whereWidth = 16
 )
 
 func padRight(s string, width int) string {
@@ -167,11 +165,24 @@ func truncateFront(s string, width int) string {
 }
 
 func formatLogLine(scope, level, module, where, msg string) string {
+	// 捕获路径也可能带入较长名称：纳入动态列宽（仍受 MaxNameLen 限制）
+	regMu.Lock()
+	bumpNameWidth(&maxScopeW, scope)
+	bumpNameWidth(&maxModuleW, module)
+	sw, mw := maxScopeW, maxModuleW
+	regMu.Unlock()
+	if sw < 1 {
+		sw = 1
+	}
+	if mw < 1 {
+		mw = 1
+	}
+
 	return fmt.Sprintf("[%s][%s][%s][%s] %s : %s\n",
 		formatTimestamp(time.Now()),
-		padRight(scope, scopeWidth),
+		padRight(scope, sw),
 		padRight(level, levelWidth),
-		padRight(module, moduleWidth),
+		padRight(module, mw),
 		truncateFront(where, whereWidth),
 		msg,
 	)
